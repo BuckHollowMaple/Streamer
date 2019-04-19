@@ -4,7 +4,7 @@ Instantly streams for free Movies, TV Shows, Music, Radio, Books and more!
 
 You're going to need to re-program some of stream.py for the current primewire site format, since they change it.
 
-Usage: 
+## Usage:
   python stream.py "COMMAND"
   
   python stream.py "stream the show reno 911 season 2"
