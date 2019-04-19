@@ -7,7 +7,7 @@ You're going to need to re-program some of stream.py for the current primewire s
 Usage: 
   python stream.py "COMMAND"
 
-COMMANDS:
+## COMMANDS:
 
  [stream the next show] - Plays the next episode of the previously streamed show
  
