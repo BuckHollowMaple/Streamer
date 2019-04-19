@@ -25,3 +25,4 @@ COMMANDS:
 [stream the show] TITLE - Streams the show at season 1 episode 1
 [stream the show] TITLE [season X] - Streams the show at season X episode 1
 [stream the show] TITLE [season X episode Y] - Streams the show at season X episode Y
+
