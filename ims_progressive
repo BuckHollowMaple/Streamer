@@ -1,0 +1,370 @@
+#!/usr/bin/python
+import redis
+import os
+import sys
+import re
+from text2math import text2math
+import requests
+from bs4 import BeautifulSoup
+from time import sleep
+import subprocess
+from unidecode import unidecode
+command = ''
+
+DEBUG = False
+
+memory = redis.StrictRedis(host='localhost', port=6379, db=0)
+if memory.get('mpsyt_count') == '':
+	memory.set('mpsyt_count','0')
+
+# Returns index number for show in torrent
+def return_index():
+	source = memory.get('search_title')
+	if (not 'season' in source) and (not 'episode' in source):
+		source_season = int(source[-5:][:2])
+		source_episode = int(source[-5:][3:])
+	elif ('season' in source) and ('episode' in source):
+		source_season = int(source.split('season')[1].split()[0])
+		source_episode = int(source.split('episode')[1].split()[0])
+	with open('/root/Scripts/Alicia/memory/torrent.txt') as f:
+		lines = f.read().splitlines()
+	index_list = [s.lower() for s in lines if not 'Verifying download' in s]
+	for x in xrange(0, len(index_list)):
+		file = index_list[x].lower()
+		if ('season' in file) and ('episode' in file):
+			try:
+				if (int(file.split('season')[1].split()[0]) == source_season) and (int(file.split('episode')[1].split()[0]) == source_episode):
+					return x
+			except:
+				pass
+		else:
+			if ('s'+source_season.zfill(2)+'e'+source_episode.zfill(2) in file):
+				return x	
+	else:
+		return randint(0, len(index_list))
+
+# Find actors from a show
+def find_actors(show):
+	URL = 'https://www.google.com/search?q='+'+'.join(show.split())+'+actors'
+	resp = requests.get(URL)
+	soup = BeautifulSoup(resp.text, 'html.parser')
+	t = soup.findAll("a", {"class": "fl"},title=True)
+	listing = []
+	for each in t:
+		if '(' in each['title']:
+			test = repr(each['title']).split('(')[1].split(')')[0]
+			if not test.isdigit():
+				listing.append(repr(each['title']).split('(')[0].strip().replace("u'","").replace('u"',''))
+	if [s for s in listing if len(s.split()) != 2]:
+		listing = []
+		for each in t:
+			if '(' in each['title']:
+				test = repr(each['title']).split('(')[1].split(')')[0]
+				if not test.isdigit():
+					listing.append(repr(each['title']).split('(')[1].strip().replace("u'","").replace('u"','').split(',')[0].split(')')[0].replace('"','').replace("'",""))
+	return listing[:4]
+
+# Get actor's shows
+def suggest_actor_content(actor):
+	URL = 'https://www.google.com/search?q='+'+'.join(actor.split())
+	resp = requests.get(URL)
+	soup = BeautifulSoup(resp.text, 'html.parser')
+	t = soup.findAll("a", {"class": "fl"},title=True)
+	listing = []
+	for each in t:
+		if '(' in each['title']:
+			test = repr(each['title']).replace('\u','').split('(')[1].split(')')[0]
+			if test.isdigit():
+				listing.append(str(each['title']).split('(')[0].strip())
+	return listing
+
+# Suggests media from genre for the type
+def suggest_media(genre,type):
+	if type == 'show':
+		ttype = 'tv_series'
+	elif type == 'movie':
+		ttype = 'movies'
+	URL = 'http://www.imdb.com/search/title?genres=%s&title_type=%s' % (genre,ttype)
+	resp = requests.get(URL)
+	soup = BeautifulSoup(resp.text, 'html.parser')
+	t = soup.findAll("a")
+	listing = []
+	for each in t:
+		if ('/title/' in each.get('href')) and ('?ref' in each.get('href')) and (not 'See full summary' in str(each.text)) and (not '\n' in str(each.text)):
+			listing.append(each.text)
+	return listing
+
+# Returns the latest shows season and episode
+def latest_show(show):
+	URL = 'https://www.google.com/search?q='+'+'.join(show.split())
+	resp = requests.get(URL)
+	soup = BeautifulSoup(resp.text, 'html.parser')
+	t = soup.findAll("a", {"class": "fl"})
+	for each in t:
+		text = str((each.text).encode('utf-8'))
+		if (len(text.split()[0]) == 3) and (text[0] == 'S'):
+			match = text.split('Season')[0]
+			return show+match.split(' \xc2\xb7 ')[0].replace(' ','').lower()
+
+# Parses show details into sXXeXX format
+def parse_media(movie_name):
+	show_name = ''
+	if ('season' in movie_name.lower()):
+	    number = int(movie_name.lower().split('season')[1].split()[0])
+	    if number < 10:
+		show_name += " s0"+str(number)
+	    else:
+		show_name += " s"+str(number)
+	else:
+	    show_name += " s01"
+	if ('episode' in movie_name.lower()):
+	    number = int(movie_name.lower().split('episode')[1].split()[0])
+	    if number < 10:
+		show_name += "e0"+str(number)
+	    else:
+		show_name += "e"+str(number)
+	else:
+	    show_name += "e01"
+
+	movie_name = movie_name.split('season')[0].split('episode')[0].strip() + show_name
+
+	last_ep = int(movie_name[-1])
+	
+	return movie_name
+
+# Returns the magnet link to a torrent
+def get_magnet_link(movie_name = 'harry potter', type = 'movie', lastResort = False):
+    original = movie_name
+    resort_name = ''
+
+    # Parses show details into a proper format
+    if (type == 'show') and (not 's0' in movie_name) and (('season' in movie_name) or ('episode' in movie_name)):
+	if lastResort == False:
+		movie_name = parse_media(movie_name)
+	else:
+		resort_name = parse_media(movie_name)
+
+    # Parse the appropriate URL
+    URL = 'https://thepiratebay.org/search/'+movie_name+'/0/99/'
+    if lastResort == True:
+	URL += '0'
+    elif type == 'movie':
+	URL += '200'
+    elif type == 'show':
+	URL += '205'
+    elif type == 'song':   
+	URL += '101'
+    elif type == 'book':
+	URL += '601'
+
+    # Receive the response
+    resp = requests.get(URL)
+    soup = BeautifulSoup(resp.text, 'html.parser')
+
+    movie_page = soup.find_all("a")
+    movie_page_size = soup.find_all("font")
+    movie_page_seeders = soup.findAll("td", {"align": "right"})
+
+    # File sizes for all torrents
+    file_size = []
+    for x in xrange(0,len(movie_page_size)):
+	size = float(str(movie_page_size[x]).split('Size ')[1].split(',')[0].split('\xc2')[0])
+	if (size < 20) and ((type == 'show') or (type == 'movie')):
+		size = size*1024
+	file_size.append(size)	
+
+    # Seeders for all torrents
+    file_seeders = []
+    for x in xrange(0, len(movie_page_seeders)):
+	if x % 2 == 0:
+		file_seeders.append(int(str(movie_page_seeders[x]).split('>')[1].split('<')[0]))
+
+    # Magnets for all torrents
+    file_magnet = [s.get('href') for s in movie_page if 'magnet' in s.get('href')]
+
+    # Titles for all torrents
+    file_titles = [s.get('title') for s in movie_page if 'torrent' in s.get('href')]
+
+    # Returns the ideal magnet
+    y = len(file_magnet)-1
+    ideal_magnet = ''
+    if lastResort == False:
+	    for x in xrange(0, y):
+		if (type == 'show'):
+			if (file_seeders[y-x] > 3) and (file_size[y-x] < 600) and (not 'sub' in file_titles[y-x].lower()):
+				ideal_magnet = file_magnet[y-x]
+		elif (type == 'book'):
+			if (file_seeders[y-x] > 3) and (file_size[y-x] < 200):
+				ideal_magnet = file_magnet[y-x]
+		elif (type == 'song'):
+			if (file_seeders[y-x] > 3) and (file_size[y-x] < 50):
+				ideal_magnet = file_magnet[y-x]
+		elif (type == 'movie'):
+			if (file_seeders[y-x] > 3) and (file_size[y-x] < 1000) and (not 'sub' in file_titles[y-x].lower()):
+				ideal_magnet = file_magnet[y-x]
+	    else:
+		ideal_magnet = file_magnet[0]
+    else:
+	ideal_magnet = file_magnet[0]
+
+    # Sets the next show in memory
+    if (type == 'show'):
+	    if ('s0' in original):
+		memory.set('imsAfterShow',original[:-6]+'season '+str(int(original[-5:][:2]))+' episode '+str(int(original[-5:][3:])+1))
+	    elif 'episode' in original:
+		memory.set('imsAfterShow',original.split('episode')[0]+'episode '+str(int(original.lower().split('episode')[1].split()[0])+1))
+	    elif (movie_name[-6] == 's'):
+		memory.set('imsAfterShow',movie_name[:-6]+'season '+str(int(movie_name[-5:][:2]))+' episode '+str(int(movie_name[-5:][3:])+1))
+
+    # Not a lot of seeders on the chosen magnet
+    if (file_seeders[file_magnet.index(ideal_magnet)] <= 3) and (lastResort == False):
+	ideal_magnet = get_magnet_link(movie_name,type,True)
+
+    memory.set('torrent_size',str(file_size[file_magnet.index(ideal_magnet)]))
+    if resort_name:
+	if 's0' in resort_name:
+		memory.set('search_title',resort_name)
+	else:
+		memory.set('search_title',resort_name+' s01e01')
+    else:
+	if 's0' in resort_name:
+		memory.set('search_title',movie_name)
+	else:
+		memory.set('search_title',movie_name+' s01e01')
+
+    return ideal_magnet
+
+# Init call
+def main():
+    query = ' '.join(sys.argv[1:])
+    source = ' '.join(query.split()[1:])
+    type = query.split()[0]
+    command = ''
+
+    # Removes words not needed
+    if source and (source.split()[0].lower() in ["for","the"]):
+	source = ' '.join(source.split()[1:])
+
+    # Command 'stream the next show'
+    if (source == '') and (type == 'show'):
+	source = memory.get('imsAfterShow')
+
+    # Command 'stream the tv show big bang theory latest episode'
+    if (type == 'show') and (('latest' in source) or ('newest' in source) or ('last' in source)):
+	source = latest_show(source.split('last')[0].split('newest')[0].split('latest')[0])
+	if not source:
+		memory.set('ttsOverride',"I'm sorry, but I cannot find that information")
+		sys.exit()
+
+    if type != 'youtube':
+	    # For a search within the type
+	    try:
+		test_magnet = get_magnet_link(source,type,False)
+		if (type == 'movie') or (type == 'song') or (type == 'show'):
+			command = 'peerflix "'+test_magnet+'" --vlc -- --fullscreen --no-sub-autodetect-file --sub-track 100'
+		elif (type == 'book'):
+			command = 'cd /root/Scripts/Alicia/misc/books/ && aria2c "'+test_magnet+'" --seed-time=0'
+	    except:
+		# For a search on all results
+		try:
+			test_magnet = get_magnet_link(source,type,True)
+			if (type == 'movie') or (type == 'song') or (type == 'show'):
+				command = 'peerflix "'+test_magnet+'" --vlc -- --fullscreen --no-sub-autodetect-file --sub-track 100'
+			elif (type == 'book'):
+				command = 'cd /root/Scripts/Alicia/misc/books/ && aria2c "'+test_magnet+'" --seed-time=0'
+		# If Show - then move to next season
+		except:
+			try:
+				if (type == 'show'):
+					next_season = str(int(parse_media(source)[-5:][:2])+1)
+					test_magnet = get_magnet_link(parse_media(source)[:-6]+'s0'+next_season+'e01',type,False)
+					command = 'peerflix "'+test_magnet+'" --vlc -- --fullscreen --no-sub-autodetect-file --sub-track 100'
+				else:
+					memory.set('ttsOverride',"I didn't find any results. Try being more concise")
+					sys.exit()
+			# Nothing at all 
+			except:
+				memory.set('ttsOverride',"I couldn't find anything for you. I'm sorry!")
+				sys.exit()
+    else:
+	if source.split()[0] == 'next':
+		memory.set('mpsyt_count',str(int(memory.get('mpsyt_count'))+1))
+		command = "mpsyt set search_music false, set show_video true, set fullscreen 1,/'%s',%s,q" % (source, memory.get('mpsyt_count'))
+	else:
+		memory.set('mpsyt_count','0')
+		command = "mpsyt set search_music false, set show_video true, set fullscreen 1,/'%s',0,q" % source
+
+    try:
+	if type == 'book':
+		memory.set('ttsOverride',"I've found your book online. Please wait")
+	else:
+		memory.set('ttsOverride',"Beginning the download")
+
+	# This is a season show torrent - find the right index		
+	if (type == 'show') and (float(memory.get('torrent_size')) > 700):
+		os.system('peerflix "'+command.split('"')[1].split('"')[0]+'" --list > /root/Scripts/Alicia/memory/torrent.txt 2>&1')
+		command = '"'.join(command.split('"')[:-1])+'" -i '+str(return_index())+' --vlc -- --fullscreen --no-sub-autodetect-file --sub-track 100'	
+
+	print '\n'+command+'\n'+memory.get('torrent_size')
+
+	subprocess.Popen(command+" >/dev/null 2>&1", shell=True,stdout=subprocess.PIPE,stdin=subprocess.PIPE, stderr=subprocess.PIPE)
+
+	while os.popen('ps -aux | grep aria2c').read().count('\n') > 2:
+		sleep(1)
+	
+	# Ebook processing
+	if type == 'book':
+		test = []
+		for x in xrange(0,len(source.split())):
+			#if x != len(source.split())-1:
+			t_source = ' '.join(source.split()[:len(source.split())-x])
+			t_1 = os.popen('find /root/Scripts/Alicia/misc/books/ -iname "*%s*" -type f' % t_source.strip()).read().split('\n')
+			t_2 = os.popen('find /root/Scripts/Alicia/misc/books/ -iname "*%s*" -type f' % t_source.strip().replace(' ','_')).read().split('\n')
+			if t_1[0] or t_2[0]:
+				break
+		if t_1[0]:
+			test = t_1
+		elif t_2[0]:
+			test = t_2
+		if test:
+			books = [s for s in test if ('epub' in s) or ('pdf' in s) or ('mobi' in s)]
+			book_title = books[0].split('.')[0].split('/')[-1]
+			# Multiple formats for the same book
+			if [s for s in books if book_title in s]:
+				# Looks for mobi first
+				if [s for s in books if 'mobi' in s]:
+					books = [s for s in books if 'mobi' in s]
+				# Looks for pdf second
+				elif [s for s in books if 'pdf' in s]:
+					books = [s for s in books if 'pdf' in s]
+				# Settles for epub
+				else:
+					books = [s for s in books if 'epub' in s]
+			# Verbose
+			if len(books) > 1:
+				memory.set('ttsOverride',"There are a bunch of books in this collection it seems. This process might take a while")
+			else:
+				memory.set('ttsOverride',"I'm processing the book now. It shouldn't take long")
+			# Process every book in list 'books'
+			for x in xrange(0, len(books)):
+				os.system('rm /root/Scripts/Alicia/misc/book.mobi >/dev/null 2>&1')
+				os.system('ebook-convert "%s" /root/Scripts/Alicia/misc/book.mobi >/dev/null 2>&1' % books[x])
+				if os.path.isfile('/root/Scripts/Alicia/misc/book.mobi'):
+					os.system('node /root/Scripts/Alicia/casperjs/sendBookEmail.js >/dev/null 2>&1')
+					memory.set('ttsOverride',"%s is now uploaded to your kindle" % books[x].split('.')[0].split('/')[-1])					
+				else:
+					memory.set('ttsOverride',"There seems to be an issue with this particular book. I'm sorry" % str(type))
+			# Setup ssh code into book machine ip
+			pass
+	
+    except Exception as e:
+	memory.set('ttsOverride',"There seems to be an issue with the %s I found" % str(type))
+	exc_type, exc_obj, exc_tb = sys.exc_info()
+	fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
+	print(exc_type, fname, exc_tb.tb_lineno)
+        print e
+	#print "Error"
+        exit()
+
+if __name__ == '__main__':
+    main()
