@@ -6,6 +6,8 @@ You're going to need to re-program some of stream.py for the current primewire s
 
 Usage: 
   python stream.py "COMMAND"
+Ex.
+  python stream.py "stream the show reno 911 season 2"
 
 ## COMMANDS:
 
