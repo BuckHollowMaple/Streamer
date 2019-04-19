@@ -9,8 +9,8 @@ Usage:
 
 COMMANDS:
 
-[stream the next show] - Plays the next episode of the previously streamed show
-[stream the previous show] - Plays the previous episode
+[stream the next show] - Plays the next episode of the previously streamed show\n
+[stream the previous show] - Plays the previous episode\n
 [stream the show] TITLE OF SHOW [latest episode] - Plays the last available episode of a show
 [stream the weather] - Shows radar and tells you the weekly forecast
 [stream the episode of] TITLE OF SHOW [when/where] DESCRIPTION OF SHOW - Finds & plays show from desc.
