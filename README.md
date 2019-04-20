@@ -44,12 +44,19 @@ You're going to need to re-program some of stream.py for the current primewire s
  [stream the show] TITLE [season X episode Y] - Streams the show at season X episode Y
 
 --- IF A STREAM IS PLAYING, MUTE IT WITH YOUR REMOTE BEFORE USING THESE COMMANDS ---
+
 [turn on] - Turns the TV on
+
 [turn off] - Turns the TV off
+
 [volume to] VOLUME PERCENT - Changes the volume to the percent of the number given
+
 [volume up] - Turns the volume up
+
 [volume down] - Turns the volume down
+
 [pause stream] - Pauses the stream
+
 [play stream] - Plays the paused stream
 [stop stream] - Stops the stream and saves its position to resume later
 [resume stream] - Resumes the stream at the saved position from [stop stream]
