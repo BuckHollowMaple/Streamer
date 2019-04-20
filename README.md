@@ -9,7 +9,7 @@ You're going to need to re-program some of stream.py for the current primewire s
   
   python stream.py "stream the show reno 911 season 2"
 
-## COMMANDS:
+## GENERAL COMMANDS:
 
  [stream the next show] - Plays the next episode of the previously streamed show
  
@@ -42,6 +42,8 @@ You're going to need to re-program some of stream.py for the current primewire s
  [stream the show] TITLE [season X] - Streams the show at season X episode 1
  
  [stream the show] TITLE [season X episode Y] - Streams the show at season X episode Y
+ 
+## RPI COMMANDS:
 
 --- IF A STREAM IS PLAYING, MUTE IT WITH YOUR REMOTE BEFORE USING THESE COMMANDS ---
 
