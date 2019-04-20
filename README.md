@@ -58,6 +58,9 @@ You're going to need to re-program some of stream.py for the current primewire s
 [pause stream] - Pauses the stream
 
 [play stream] - Plays the paused stream
+
 [stop stream] - Stops the stream and saves its position to resume later
+
 [resume stream] - Resumes the stream at the saved position from [stop stream]
+
 [stream help] - Gives you a generic listing of all commands available
